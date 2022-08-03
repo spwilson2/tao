@@ -173,7 +173,7 @@ mod icon;
 pub mod keyboard;
 pub mod menu;
 pub mod monitor;
-mod platform_impl;
+pub mod platform_impl;
 
 #[cfg(any(target_os = "windows", target_os = "macos",))]
 #[cfg(feature = "tray")]

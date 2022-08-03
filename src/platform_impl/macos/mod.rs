@@ -23,11 +23,12 @@ mod view;
 mod window;
 mod window_delegate;
 
-use std::{fmt, ops::Deref, sync::Arc};
+use std::{fmt, ops::Deref, sync::Arc, os::raw::c_void};
 
 #[cfg(feature = "tray")]
 pub use self::system_tray::{SystemTray, SystemTrayBuilder};
 
+use self::util::IdRef;
 pub use self::{
   app_delegate::{get_aux_state_mut, AuxDelegateState},
   clipboard::Clipboard,
@@ -43,6 +44,7 @@ use crate::{
   error::OsError as RootOsError, event::DeviceId as RootDeviceId, window::WindowAttributes,
 };
 
+use cocoa::appkit::NSWindow;
 pub(crate) use icon::PlatformIcon;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -57,10 +59,22 @@ impl DeviceId {
 // Constant device ID; to be removed when if backend is updated to report real device IDs.
 pub(crate) const DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId);
 
-pub struct Window {
+#[allow(non_camel_case_types)]
+pub type ns_window = *mut c_void;
+pub struct NativeHandle(pub ns_window);
+
+enum WindowItem {
+  Raw(NativeHandle),
+  Unowned(OwnedWindow),
+}
+struct OwnedWindow {
   window: Arc<UnownedWindow>,
   // We keep this around so that it doesn't get dropped until the window does.
   delegate: util::IdRef,
+}
+
+pub struct Window {
+  item: WindowItem
 }
 
 #[non_exhaustive]
@@ -77,7 +91,18 @@ impl Deref for Window {
   type Target = UnownedWindow;
   #[inline]
   fn deref(&self) -> &Self::Target {
-    &*self.window
+    match &self.item {
+      WindowItem::Unowned(win) => &*win.window,
+      WindowItem::Raw(handle) => todo!(),
+    }
+  }
+}
+impl Window {
+  pub fn ns_window(&self) -> *mut c_void {
+    match &self.item {
+      WindowItem::Unowned(win) => *win.window.ns_window as _,
+      WindowItem::Raw(handle) => handle.0,
+    }
   }
 }
 
@@ -88,15 +113,27 @@ impl Window {
     pl_attribs: PlatformSpecificWindowBuilderAttributes,
   ) -> Result<Self, RootOsError> {
     let (window, delegate) = UnownedWindow::new(attributes, pl_attribs)?;
-    Ok(Window { window, delegate })
+    Ok(Window{item: WindowItem::Unowned(OwnedWindow{ window, delegate })})
+  }
+  
+  fn owned(&self) -> &OwnedWindow {
+    match &self.item {
+      WindowItem::Unowned(window) => window,
+      _ => todo!(),
+    }
   }
 
   #[inline]
   pub fn is_maximized(&self) -> bool {
-    let () = unsafe { msg_send![*self.delegate, markIsCheckingZoomedIn] };
-    let f = self.window.is_zoomed();
-    let () = unsafe { msg_send![*self.delegate, clearIsCheckingZoomedIn] };
+    let () = unsafe { msg_send![*self.owned().delegate, markIsCheckingZoomedIn] };
+    let f = self.owned().window.is_zoomed();
+    let () = unsafe { msg_send![*self.owned().delegate, clearIsCheckingZoomedIn] };
     f
+  }
+  pub fn from_raw_handle(raw_window_handle: NativeHandle) -> Self {
+    Self {
+      item: WindowItem::Raw(raw_window_handle),
+    }
   }
 }
 

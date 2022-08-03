@@ -12,7 +12,7 @@ use crate::{
   event_loop::EventLoopWindowTarget,
   menu::MenuBar,
   monitor::{MonitorHandle, VideoMode},
-  platform_impl,
+  platform_impl::{self, NativeHandle},
 };
 
 pub use crate::icon::{BadIcon, Icon};
@@ -405,6 +405,7 @@ impl WindowBuilder {
       },
     )
   }
+
 }
 
 /// Base Window functions.
@@ -991,6 +992,19 @@ unsafe impl HasRawWindowHandle for Window {
   fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
     self.window.raw_window_handle()
   }
+}
+
+pub unsafe trait FromRawWindowHandle {
+    fn from_raw_window_handle(handle: NativeHandle) -> Self;
+}
+
+// TODO Change Window to native handle
+unsafe impl FromRawWindowHandle for Window {
+    fn from_raw_window_handle(handle: NativeHandle) -> Self {
+      Self {
+        window: platform_impl::Window::from_raw_handle(handle)
+      }
+    }
 }
 
 unsafe impl HasRawDisplayHandle for Window {
